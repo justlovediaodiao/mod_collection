@@ -1,0 +1,45 @@
+name: PRAGMATA Dynamic FPS
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: pragmata_dynamic_fps
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkout REFramework SDK
+        uses: actions/checkout@v4
+        with:
+          repository: praydog/REFramework
+          ref: master
+          path: reframework-sdk
+          sparse-checkout: include/reframework
+
+      - name: Set up MSVC
+        uses: step-security/msvc-dev-cmd@v1
+
+      - name: Configure
+        shell: pwsh
+        run: >-
+          cmake -S . -B build -A x64
+          -DREFRAMEWORK_NIGHTLY_SDK_DIR="$env:GITHUB_WORKSPACE/reframework-sdk"
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Upload plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: pragmata-dynamic-fps-windows-x64
+          path: pragmata_dynamic_fps/build/Release/pragmata_dynamic_fps.dll
+          if-no-files-found: error

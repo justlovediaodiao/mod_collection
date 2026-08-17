@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CheatTable CheatEngineTableVersion="46">
+  <CheatEntries>
+    <CheatEntry>
+      <ID>0</ID>
+      <Description>"Jump Height Multiplier"</Description>
+      <ShowAsSigned>0</ShowAsSigned>
+      <Color>00A5FF</Color>
+      <VariableType>Float</VariableType>
+      <Address>PRAGMATA.exe+9B20C6</Address>
+    </CheatEntry>
+      </CheatEntries>	
+  <UserdefinedSymbols/>
+</CheatTable>
