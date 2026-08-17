@@ -3,9 +3,9 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
-#include <wchar.h>
 
 #include "mod_loader_api.h"
+#include "streamline_api.h"
 
 namespace rtss {
 bool set_fps_limit(uint32_t fps, char* message, size_t message_size);
@@ -13,46 +13,12 @@ bool set_fps_limit(uint32_t fps, char* message, size_t message_size);
 
 namespace {
 
-constexpr uint32_t MENU_FPS = 60;
-constexpr uint32_t GAMEPLAY_FPS = 120;
+constexpr uint32_t FRAME_GENERATION_OFF_FPS = 60;
+constexpr uint32_t FRAME_GENERATION_ON_FPS = 120;
 constexpr DWORD CHECK_INTERVAL_MS = 300;
+constexpr uint32_t MAIN_VIEWPORT = 0;
 
-constexpr wchar_t MENU_OPEN_FUNCTION[] =
-    L"/Game/UI/Scripts/ui_script_menu_base.ui_script_menu_base_C:MenuOpen";
-constexpr wchar_t MENU_CLOSE_FUNCTION[] =
-    L"/Game/UI/Scripts/ui_script_menu_base.ui_script_menu_base_C:MenuClose";
-constexpr wchar_t HOOK_ID[] = L"borderlands4_dynamic_fps";
-
-using IsSdkInitialized = bool (*)();
-
-struct CallbackInner;
-
-struct CallbackVTable {
-    void (*destroy)(CallbackInner*);
-    bool (*call)(CallbackInner*, void*);
-};
-
-struct CallbackInner {
-    volatile const CallbackVTable* vtable;
-    LONG menu_open;
-};
-
-struct DLLSafeCallback {
-    CallbackInner* inner;
-};
-
-using AddHook = bool (*)(const wchar_t* function, size_t function_size,
-                         uint8_t type, const wchar_t* identifier,
-                         size_t identifier_size, DLLSafeCallback* callback);
-
-struct PluginState {
-    mod_log_fn log{};
-    volatile LONG menu_open{1};
-    uint32_t current_fps{UINT32_MAX};
-    bool rtss_warning_logged{};
-};
-
-PluginState g_state;
+mod_log_fn g_log{};
 
 template <typename T>
 void load_export(HMODULE module, const char* name, T& destination) {
@@ -61,102 +27,75 @@ void load_export(HMODULE module, const char* name, T& destination) {
     memcpy(&destination, &address, sizeof(destination));
 }
 
-void log(const wchar_t* message) {
-    if (g_state.log != nullptr) {
-        g_state.log(message);
-    }
-}
-
 void log(const char* message) {
-    wchar_t wide_message[256]{};
-    if (MultiByteToWideChar(CP_ACP, 0, message, -1, wide_message,
-                            static_cast<int>(sizeof(wide_message) /
-                                             sizeof(wide_message[0]))) > 0) {
-        log(wide_message);
+    if (g_log != nullptr) {
+        g_log(message);
     }
 }
 
-HMODULE load_unrealsdk() {
-    wchar_t path[MAX_PATH]{};
-    const DWORD length = GetModuleFileNameW(nullptr, path, MAX_PATH);
-    if (length == 0 || length >= MAX_PATH) {
+streamline::DLSSGGetState initialize_dlssg() {
+    static streamline::DLSSGGetState get_state{};
+    static bool failure_logged = false;
+    if (get_state != nullptr) {
+        return get_state;
+    }
+
+    const HMODULE module = GetModuleHandleW(L"sl.interposer.dll");
+    streamline::GetFeatureFunction get_feature_function{};
+    if (module != nullptr) {
+        load_export(module, "slGetFeatureFunction", get_feature_function);
+    }
+
+    void* address{};
+    const bool initialized =
+        get_feature_function != nullptr &&
+        get_feature_function(streamline::FEATURE_DLSS_G,
+                             "slDLSSGGetState", address) ==
+            streamline::Result::ok &&
+        address != nullptr;
+    if (!initialized) {
+        if (!failure_logged) {
+            failure_logged = true;
+            log("[BL4 Dynamic FPS] NVIDIA DLSS-G is not initialized");
+        }
         return nullptr;
     }
 
-    wchar_t* filename = wcsrchr(path, L'\\');
-    if (filename == nullptr) {
-        return nullptr;
-    }
-    ++filename;
-
-    constexpr wchar_t relative_path[] = L"Plugins\\unrealsdk.dll";
-    const size_t remaining = MAX_PATH - static_cast<size_t>(filename - path);
-    if (wcslen(relative_path) + 1 > remaining) {
-        return nullptr;
-    }
-    wcscpy_s(filename, remaining, relative_path);
-    return LoadLibraryW(path);
+    static_assert(sizeof(get_state) == sizeof(address));
+    memcpy(&get_state, &address, sizeof(get_state));
+    log("[BL4 Dynamic FPS] NVIDIA DLSS-G initialized");
+    return get_state;
 }
 
-void destroy_callback(CallbackInner*) {}
+bool is_frame_generation_active() {
+    const streamline::DLSSGGetState get_state = initialize_dlssg();
+    if (get_state == nullptr) {
+        return false;
+    }
 
-bool run_callback(CallbackInner* callback, void*) {
-    InterlockedExchange(&g_state.menu_open, callback->menu_open);
-    return false;
-}
-
-const CallbackVTable CALLBACK_VTABLE = {destroy_callback, run_callback};
-CallbackInner OPEN_CALLBACK = {&CALLBACK_VTABLE, 1};
-CallbackInner CLOSE_CALLBACK = {&CALLBACK_VTABLE, 0};
-
-bool add_menu_hook(AddHook add_hook, const wchar_t* function,
-                   CallbackInner* callback) {
-    DLLSafeCallback wrapper{callback};
-    return add_hook(function, wcslen(function), 0, HOOK_ID,
-                    (sizeof(HOOK_ID) / sizeof(HOOK_ID[0])) - 1, &wrapper);
+    streamline::ViewportHandle viewport{MAIN_VIEWPORT};
+    streamline::DLSSGState state;
+    return get_state(viewport, state, nullptr) == streamline::Result::ok &&
+           state.status == 0 && state.num_frames_actually_presented > 1;
 }
 
 DWORD WINAPI worker(void*) {
-    const HMODULE sdk = load_unrealsdk();
-    if (sdk == nullptr) {
-        log(L"[BL4 Dynamic FPS] Failed to load Plugins\\unrealsdk.dll");
-        return 1;
-    }
-
-    IsSdkInitialized is_sdk_initialized{};
-    AddHook add_hook{};
-    load_export(sdk, "_unrealsdk_export__is_initialized",
-                is_sdk_initialized);
-    load_export(sdk, "_unrealsdk_export__add_hook", add_hook);
-    if (is_sdk_initialized == nullptr || add_hook == nullptr) {
-        log(L"[BL4 Dynamic FPS] Incompatible unrealsdk.dll");
-        return 1;
-    }
-
-    while (!is_sdk_initialized()) {
-        Sleep(CHECK_INTERVAL_MS);
-    }
-
-    if (!add_menu_hook(add_hook, MENU_OPEN_FUNCTION, &OPEN_CALLBACK) ||
-        !add_menu_hook(add_hook, MENU_CLOSE_FUNCTION, &CLOSE_CALLBACK)) {
-        log(L"[BL4 Dynamic FPS] Failed to install menu hooks");
-        return 1;
-    }
-
-    log(L"[BL4 Dynamic FPS] Initialized");
+    log("[BL4 Dynamic FPS] Initialized");
+    uint32_t current_fps = UINT32_MAX;
+    bool rtss_warning_logged = false;
 
     for (;;) {
-        const bool menu_open =
-            InterlockedCompareExchange(&g_state.menu_open, 0, 0) != 0;
-        const uint32_t target_fps = menu_open ? MENU_FPS : GAMEPLAY_FPS;
-        if (target_fps != g_state.current_fps) {
+        const uint32_t target_fps = is_frame_generation_active()
+                                        ? FRAME_GENERATION_ON_FPS
+                                        : FRAME_GENERATION_OFF_FPS;
+        if (target_fps != current_fps) {
             char message[256]{};
             if (rtss::set_fps_limit(target_fps, message, sizeof(message))) {
-                g_state.current_fps = target_fps;
-                g_state.rtss_warning_logged = false;
+                current_fps = target_fps;
+                rtss_warning_logged = false;
                 log(message);
-            } else if (!g_state.rtss_warning_logged) {
-                g_state.rtss_warning_logged = true;
+            } else if (!rtss_warning_logged) {
+                rtss_warning_logged = true;
                 log(message);
             }
         }
@@ -168,12 +107,12 @@ DWORD WINAPI worker(void*) {
 
 extern "C" __declspec(dllexport) void MOD_LOADER_CALL
 on_mod_load(mod_log_fn logger) {
-    g_state.log = logger;
+    g_log = logger;
     const HANDLE thread = CreateThread(nullptr, 0, worker, nullptr, 0, nullptr);
     if (thread != nullptr) {
         CloseHandle(thread);
     } else {
-        log(L"[BL4 Dynamic FPS] Failed to create worker thread");
+        log("[BL4 Dynamic FPS] Failed to create worker thread");
     }
 }
 

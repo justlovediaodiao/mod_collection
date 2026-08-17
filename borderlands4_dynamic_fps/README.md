@@ -2,21 +2,18 @@
 
 A native `mod_loader` mod for Borderlands 4.
 
-- Menus: 60 FPS
-- Gameplay: 120 FPS
-- Works with keyboard, mouse, and controller input
+- NVIDIA frame generation inactive: 60 FPS
+- NVIDIA frame generation actively presenting generated frames: 120 FPS
 
-The mod hooks the game's verified Unreal Engine `MenuOpen` and `MenuClose`
-functions and updates the RTSS frame limit for the current game profile.
+The mod queries the game's NVIDIA Streamline DLSS-G state and checks the number
+of frames actually presented. It updates the RTSS limit for the current game
+profile based on whether generated frames are really being inserted.
 
 ## Requirements
 
 - [mod_loader](https://github.com/justlovediaodiao/mod_loader)
 - RivaTuner Statistics Server (RTSS) running while the game is running
-- `unrealsdk.dll` from the OAK2 SDK
-
-The GitHub Actions artifact includes both the mod and the required
-`unrealsdk.dll`.
+- An NVIDIA GPU supported by the game's DLSS Frame Generation implementation
 
 ## Installation
 
@@ -32,11 +29,7 @@ The resulting layout must be:
 Win64/
 |-- mods/
 |   `-- borderlands4_dynamic_fps.dll
-`-- Plugins/
-    `-- unrealsdk.dll
 ```
-
-Do not remove `Plugins/unrealsdk.dll`; the mod requires it at runtime.
 
 ## RTSS profile permissions
 

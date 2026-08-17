@@ -29,24 +29,13 @@ jobs:
       - name: Package
         shell: pwsh
         run: |
-          $sdkArchive = Join-Path $env:RUNNER_TEMP 'oak2-sdk.zip'
-          $sdkDirectory = Join-Path $env:RUNNER_TEMP 'oak2-sdk'
           $packageDirectory = Join-Path $env:RUNNER_TEMP 'borderlands4-dynamic-fps'
 
-          Invoke-WebRequest `
-            -Uri 'https://github.com/bl-sdk/oak2-mod-manager/releases/download/v0.3/oak2-sdk.zip' `
-            -OutFile $sdkArchive
-          Expand-Archive -LiteralPath $sdkArchive -DestinationPath $sdkDirectory
-
           New-Item -ItemType Directory -Force `
-            (Join-Path $packageDirectory 'mods'), `
-            (Join-Path $packageDirectory 'Plugins') | Out-Null
+            (Join-Path $packageDirectory 'mods') | Out-Null
           Copy-Item `
             'build/Release/borderlands4_dynamic_fps.dll' `
             (Join-Path $packageDirectory 'mods/')
-          Copy-Item `
-            (Join-Path $sdkDirectory 'OakGame/Binaries/Win64/Plugins/unrealsdk.dll') `
-            (Join-Path $packageDirectory 'Plugins/')
 
       - name: Upload package
         uses: actions/upload-artifact@v4
