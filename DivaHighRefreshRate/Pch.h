@@ -19,6 +19,4 @@
 #include <toml.hpp>
 
 // Frame Limiter
-#include <chrono>
 #include <d3d11.h>
-#include <thread>

@@ -1,0 +1,33 @@
+name: Diva High Refresh Rate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Release x64
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build DLL
+        run: >-
+          msbuild DivaHighRefreshRate/HighRefreshRate.vcxproj
+          /m
+          /p:Configuration=Release
+          /p:Platform=x64
+
+      - name: Upload DLL
+        uses: actions/upload-artifact@v4
+        with:
+          name: HighFrameRate-windows-x64
+          path: DivaHighRefreshRate/bin/x64/Release/HighFrameRate.dll
+          if-no-files-found: error

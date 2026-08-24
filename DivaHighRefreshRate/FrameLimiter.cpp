@@ -2,16 +2,91 @@
 
 #include "FrameLimiter.h"
 
-using namespace std::chrono;
+constexpr int NVAPI_OK = 0;
 
-using FrameRatio = duration<double, std::ratio<1, 60>>;
+struct NV_SET_SLEEP_MODE_PARAMS
+{
+	int version;
+	uint8_t bLowLatencyMode;
+	uint8_t bLowLatencyBoost;
+	uint32_t minimumIntervalUs;
+	uint8_t bUseMarkersToOptimize;
+	uint8_t bUseMinQueueTime;
+	uint8_t reserved[30];
+};
 
-static bool enable_frame_limit = true;
-static auto frame_start = high_resolution_clock::now();
-static auto frame_ratio = FrameRatio(1);
+constexpr int NV_SLEEP_PARAMS_VER =
+	static_cast<int>(sizeof(NV_SET_SLEEP_MODE_PARAMS) | (1 << 16));
 
-static duration<double, std::milli> present_time = {};
-static milliseconds frame_portion_ms = duration_cast<milliseconds>(frame_ratio) - milliseconds(1);
+using NvAPI_QueryInterface = void*(__cdecl*)(int);
+using NvAPI_Initialize = int(__cdecl*)();
+using NvAPI_D3D_SetSleepMode =
+	int(__cdecl*)(IUnknown*, NV_SET_SLEEP_MODE_PARAMS*);
+using NvAPI_D3D_Sleep = int(__cdecl*)(IUnknown*);
+
+constexpr int ID_NvAPI_Initialize = 0x0150E828;
+constexpr int ID_NvAPI_D3D_SetSleepMode = static_cast<int>(0xAC1CA9E0u);
+constexpr int ID_NvAPI_D3D_Sleep = static_cast<int>(0x852CD1D2u);
+
+static NvAPI_D3D_SetSleepMode nvapi_set_sleep_mode = nullptr;
+static NvAPI_D3D_Sleep nvapi_sleep = nullptr;
+static IUnknown* d3d_device = nullptr;
+static bool enable_frame_limit = false;
+
+static bool ResolveNvAPI()
+{
+#ifdef _WIN64
+	HMODULE nvapi = GetModuleHandleW(L"nvapi64.dll");
+	if (!nvapi)
+		nvapi = LoadLibraryW(L"nvapi64.dll");
+#else
+	HMODULE nvapi = GetModuleHandleW(L"nvapi.dll");
+	if (!nvapi)
+		nvapi = LoadLibraryW(L"nvapi.dll");
+#endif
+
+	if (!nvapi)
+		return false;
+
+	auto queryInterface = reinterpret_cast<NvAPI_QueryInterface>(
+		GetProcAddress(nvapi, "nvapi_QueryInterface"));
+	if (!queryInterface)
+		return false;
+
+	auto initialize = reinterpret_cast<NvAPI_Initialize>(
+		queryInterface(ID_NvAPI_Initialize));
+	if (!initialize || initialize() != NVAPI_OK)
+		return false;
+
+	nvapi_set_sleep_mode = reinterpret_cast<NvAPI_D3D_SetSleepMode>(
+		queryInterface(ID_NvAPI_D3D_SetSleepMode));
+	nvapi_sleep = reinterpret_cast<NvAPI_D3D_Sleep>(
+		queryInterface(ID_NvAPI_D3D_Sleep));
+
+	return nvapi_set_sleep_mode && nvapi_sleep;
+}
+
+static void UpdateSleepMode(uint32_t minimumIntervalUs)
+{
+	if (!d3d_device || !nvapi_set_sleep_mode)
+		return;
+
+	NV_SET_SLEEP_MODE_PARAMS params = {};
+	params.version = NV_SLEEP_PARAMS_VER;
+	if (enable_frame_limit)
+	{
+		params.bLowLatencyMode = 1;
+		params.minimumIntervalUs = minimumIntervalUs;
+	}
+
+	__try
+	{
+		nvapi_set_sleep_mode(d3d_device, &params);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+	}
+}
 
 SIG_SCAN
 (
@@ -23,33 +98,16 @@ SIG_SCAN
 
 HOOK(void, __fastcall, _FrameLimiter, sigFrameLimiter())
 {
-	if (enable_frame_limit && present_time < frame_ratio)
+	if (!enable_frame_limit || !d3d_device || !nvapi_sleep)
+		return;
+
+	__try
 	{
-		auto now = high_resolution_clock::now();
-		const milliseconds delta = duration_cast<milliseconds>(now - frame_start);
-
-		if (delta < frame_ratio)
-		{
-			// sleep for a portion of the frame time to free up cpu time
-			std::this_thread::sleep_for(frame_portion_ms - delta);
-
-			while ((now = high_resolution_clock::now()) - frame_start < frame_ratio)
-			{
-				// spin for the remainder of the time
-			}
-		}
+		nvapi_sleep(d3d_device);
 	}
-
-	frame_start = high_resolution_clock::now();
-}
-
-VTABLE_HOOK(HRESULT, WINAPI, IDXGISwapChain, Present, UINT SyncInterval, UINT Flags)
-{
-	// This is done to avoid vsync issues.
-	const auto start = high_resolution_clock::now();
-	HRESULT result = originalIDXGISwapChainPresent(This, SyncInterval, Flags);
-	present_time = high_resolution_clock::now() - start;
-	return result;
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+	}
 }
 
 HOOK(HRESULT, WINAPI, D3D11CreateDeviceAndSwapChain, PROC_ADDRESS("d3d11.dll", "D3D11CreateDeviceAndSwapChain"),
@@ -66,6 +124,8 @@ HOOK(HRESULT, WINAPI, D3D11CreateDeviceAndSwapChain, PROC_ADDRESS("d3d11.dll", "
 	D3D_FEATURE_LEVEL* pFeatureLevel,
 	ID3D11DeviceContext** ppImmediateContext)
 {
+	printf("[%s] D3D11CreateDeviceAndSwapChain called.\n", MOD_NAME);
+
 	const HRESULT result = originalD3D11CreateDeviceAndSwapChain(
 		pAdapter,
 		DriverType,
@@ -80,23 +140,32 @@ HOOK(HRESULT, WINAPI, D3D11CreateDeviceAndSwapChain, PROC_ADDRESS("d3d11.dll", "
 		pFeatureLevel,
 		ppImmediateContext);
 
-	if (SUCCEEDED(result) && ppSwapChain && *ppSwapChain)
+	if (SUCCEEDED(result) && ppDevice && *ppDevice)
 	{
-		INSTALL_VTABLE_HOOK(IDXGISwapChain, *ppSwapChain, Present, 8);
+		d3d_device = *ppDevice;
 	}
 
 	return result;
 }
 
-void FrameLimiter::SetCap(intmax_t maxFPS, bool enableLimiter)
+void FrameLimiter::SetCap(uint32_t maxFPS)
 {
-	frame_ratio = FrameRatio(60.0 / (double)maxFPS);
-	frame_portion_ms = duration_cast<milliseconds>(frame_ratio) - milliseconds(1);
-	enable_frame_limit = enableLimiter;
+	enable_frame_limit = maxFPS > 0;
+	const uint32_t minimumIntervalUs = enable_frame_limit
+		? static_cast<uint32_t>((1000000 + maxFPS / 2) / maxFPS)
+		: 0;
+
+	UpdateSleepMode(minimumIntervalUs);
 }
 
 void FrameLimiter::Init()
 {
+	if (!ResolveNvAPI())
+	{
+		printf("[%s] NVAPI initialization failed.\n", MOD_NAME);
+		return;
+	}
+
 	INSTALL_HOOK(D3D11CreateDeviceAndSwapChain);
 	INSTALL_HOOK(_FrameLimiter);
 }

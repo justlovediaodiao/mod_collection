@@ -48,7 +48,7 @@ HOOK(void, __fastcall, _SetFramerateInGame, (char*)sigSetFramerateInGame() + 0xB
 	*framerateCap = Config::framerateCap;
 }
 
-uint32_t prevFramerateCap = 60;
+int64_t prevFramerateCap = -1;
 
 extern "C"
 {
@@ -59,15 +59,7 @@ extern "C"
 
 		if (Config::newLimiter && prevFramerateCap != *framerateCap)
 		{
-			if (*framerateCap == 0)
-			{
-				FrameLimiter::SetCap(60, false);
-			}
-			else
-			{
-				FrameLimiter::SetCap(*framerateCap, true);
-			}
-
+			FrameLimiter::SetCap(*framerateCap);
 			prevFramerateCap = *framerateCap;
 		}
 	}
