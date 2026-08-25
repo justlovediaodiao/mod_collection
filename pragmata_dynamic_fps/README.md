@@ -1,5 +1,7 @@
 # PRAGMATA Dynamic FPS
 
+**Updated: Try [dynamic_fps_limit](https://github.com/justlovediaodiao/mod_loader/tree/master/src/dynamic_fps_limit) mod first. Better performance and more versatile.**
+
 A native REFramework plugin that switches the RTSS frame limit based on the current PRAGMATA UI state:
 
 - Menus and title flow: 60 FPS
