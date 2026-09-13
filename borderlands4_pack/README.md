@@ -4,7 +4,7 @@ This directory contains one combined Borderlands 4 mod:
 
 | Mod | Effect |
 |---|---|
-| `BL4_XP_200_LootLuck_300` | Sets total combat experience gain to `200%` (a `100%` bonus over the base rate) and the `LootLuck` value to `300`. |
+| `BL4_XP_200_LootLuck_300` | Sets total combat experience gain to `200%` (a `100%` bonus over the base rate) and the `LootLuck` value to `300`. Only worked on Normal Difficulty|
 
 ## Installation
 
