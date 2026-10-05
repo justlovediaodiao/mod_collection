@@ -1,0 +1,50 @@
+name: MEC BeatLink AutoConnect
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Release x64
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: mec-beatlink-auto
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Configure
+        run: cmake -S . -B build -A x64
+
+      - name: Build mod
+        run: cmake --build build --config Release --parallel
+
+      - name: Install mod
+        run: cmake --install build --config Release --prefix out
+
+      - name: Publish helper
+        run: >-
+          dotnet publish helper/BeatLinkAutoConnect.csproj --output build/helper
+
+      - name: Package helper
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path out/helper -Force | Out-Null
+          Copy-Item -LiteralPath build/helper/BeatLinkAutoConnect.exe -Destination out/helper -ErrorAction Stop
+
+      - name: Upload mod and helper
+        uses: actions/upload-artifact@v4
+        with:
+          name: mec-beatlink-auto-windows-x64
+          path: mec-beatlink-auto/out/
+          if-no-files-found: error
