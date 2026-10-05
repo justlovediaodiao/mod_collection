@@ -50,3 +50,14 @@ dotnet publish helper/BeatLinkAutoConnect.csproj --configuration Release --outpu
 Outputs: `build\Release\beatlink_auto.dll` and `build\helper\BeatLinkAutoConnect.exe`.
 
 The **MEC BeatLink AutoConnect** GitHub Actions workflow packages the mod and config under `mods/`, and the single helper EXE under `helper/`. 
+
+
+## UI AutoScale Mod
+
+[Mirrors_Edge_Catalyst_UI_AutoScale.fbmod](Mirrors_Edge_Catalyst_UI_AutoScale.fbmod) enables UI scaling in Mirror's Edge Catalyst for high-resolution displays.
+
+Install this mod using **FrostyModManager**:
+
+1. Open FrostyModManager and select Mirror's Edge Catalyst.
+2. Import `Mirrors_Edge_Catalyst_UI_AutoScale.fbmod` and apply it to the game.
+3. Launch the game through FrostyModManager with the mod enabled.
