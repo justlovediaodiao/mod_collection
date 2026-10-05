@@ -46,5 +46,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mec-beatlink-auto-windows-x64
-          path: mec-beatlink-auto/out/
+          path: |
+            mec-beatlink-auto/out/mods/
+            mec-beatlink-auto/out/helper/
           if-no-files-found: error
