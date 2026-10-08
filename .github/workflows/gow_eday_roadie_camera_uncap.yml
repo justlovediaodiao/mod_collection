@@ -1,0 +1,35 @@
+name: Gears of War E-Day Roadie Camera Uncap
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Release x64
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: gow-eday-roadie-camera-uncap
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -A x64
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Install
+        run: cmake --install build --config Release --prefix out
+
+      - name: Upload mod
+        uses: actions/upload-artifact@v4
+        with:
+          name: roadie-camera-uncap-windows-x64
+          path: gow-eday-roadie-camera-uncap/out/roadie_camera_uncap.dll
+          if-no-files-found: error
