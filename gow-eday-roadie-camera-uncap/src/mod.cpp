@@ -451,7 +451,8 @@ public:
                 }
                 HANDLE thread = OpenThread(THREAD_SUSPEND_RESUME, FALSE,
                                            entry.th32ThreadID);
-                if (thread != nullptr && SuspendThread(thread) != DWORD{-1}) {
+                if (thread != nullptr &&
+                    SuspendThread(thread) != static_cast<DWORD>(-1)) {
                     threads_.push_back(thread);
                 } else if (thread != nullptr) {
                     CloseHandle(thread);
