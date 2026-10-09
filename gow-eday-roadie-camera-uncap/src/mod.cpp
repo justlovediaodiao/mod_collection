@@ -14,6 +14,7 @@
 #include <iterator>
 #include <limits>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "mod_loader_api.h"
@@ -80,7 +81,6 @@ struct ProcessorThreadState {
 
 struct ControlRotationState {
     bool primary_valid{};
-    void* primary_controller{};
     double primary_yaw{};
 };
 
@@ -103,11 +103,11 @@ struct ResolvedAddresses {
 };
 
 // The processor wrapper and outer commit are a synchronous call chain, so this
-// state belongs to the executing thread. The ordinary and Roadie controller
-// commits run on different threads and therefore use the shared state below.
+// state belongs to the executing thread. Controller commits share state keyed
+// by controller, allowing cross-thread pairing without mixing local players.
 thread_local ProcessorThreadState g_processor_state{};
 SRWLOCK g_control_rotation_lock = SRWLOCK_INIT;
-ControlRotationState g_control_rotation_state{};
+std::unordered_map<void*, ControlRotationState> g_control_rotation_states{};
 mod_log_fn g_log{};
 ResolvedAddresses g_addresses{};
 uint32_t g_target_class_id{};
@@ -617,16 +617,17 @@ extern "C" void __cdecl RoadieOnOuterExit(Rotator* output_view) noexcept {
 
 extern "C" void __cdecl RoadieOnSetControlRotation(
     void* controller, Rotator* requested, uintptr_t caller) noexcept {
-    if (requested == nullptr || !std::isfinite(requested->yaw)) {
+    if (controller == nullptr || requested == nullptr ||
+        !std::isfinite(requested->yaw)) {
         return;
     }
     const uintptr_t primary = g_addresses.primary_set_return;
     const uintptr_t limited = g_addresses.limited_set_return;
     if (caller == primary) {
         AcquireSRWLockExclusive(&g_control_rotation_lock);
-        g_control_rotation_state.primary_controller = controller;
-        g_control_rotation_state.primary_yaw = requested->yaw;
-        g_control_rotation_state.primary_valid = true;
+        auto& state = g_control_rotation_states[controller];
+        state.primary_yaw = requested->yaw;
+        state.primary_valid = true;
         ReleaseSRWLockExclusive(&g_control_rotation_lock);
         return;
     }
@@ -637,10 +638,11 @@ extern "C" void __cdecl RoadieOnSetControlRotation(
     double primary_yaw{};
     bool apply = false;
     AcquireSRWLockExclusive(&g_control_rotation_lock);
-    if (g_control_rotation_state.primary_valid &&
-        controller == g_control_rotation_state.primary_controller) {
-        primary_yaw = g_control_rotation_state.primary_yaw;
-        g_control_rotation_state.primary_valid = false;
+    const auto entry = g_control_rotation_states.find(controller);
+    if (entry != g_control_rotation_states.end() &&
+        entry->second.primary_valid) {
+        primary_yaw = entry->second.primary_yaw;
+        entry->second.primary_valid = false;
         apply = true;
     }
     ReleaseSRWLockExclusive(&g_control_rotation_lock);
