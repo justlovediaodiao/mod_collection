@@ -13,10 +13,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up MSBuild
-        uses: microsoft/setup-msbuild@v2
+        uses: microsoft/setup-msbuild@v3
 
       - name: Build DLL
         run: >-
@@ -26,7 +26,7 @@ jobs:
           /p:Platform=x64
 
       - name: Upload DLL
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: HighFrameRate-windows-x64
           path: DivaHighRefreshRate/bin/x64/Release/HighFrameRate.dll

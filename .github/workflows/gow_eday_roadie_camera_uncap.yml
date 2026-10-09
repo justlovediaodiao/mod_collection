@@ -16,7 +16,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Configure
         run: cmake -S . -B build -A x64
@@ -28,7 +28,7 @@ jobs:
         run: cmake --install build --config Release --prefix out
 
       - name: Upload mod
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: roadie-camera-uncap-windows-x64
           path: gow-eday-roadie-camera-uncap/out/roadie_camera_uncap.dll

@@ -16,10 +16,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
 
@@ -43,7 +43,7 @@ jobs:
           Copy-Item -LiteralPath build/helper/BeatLinkAutoConnect.exe -Destination out/helper -ErrorAction Stop
 
       - name: Upload mod and helper
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mec-beatlink-auto-windows-x64
           path: |
