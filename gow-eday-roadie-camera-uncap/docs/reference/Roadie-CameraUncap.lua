@@ -3,7 +3,7 @@
 -- Requirements:
 --   * Cheat Engine attached to GoWEDay.exe.
 --   * Campaign loaded far enough for the target camera class to exist.
---   * No other hook installed at the three verified patch sites.
+--   * No other hook installed at the four verified patch sites.
 --
 -- This script performs no timed capture. It installs the verified correction
 -- immediately, records status to a log file, and exposes manual control:
@@ -39,6 +39,10 @@ local LIMITED_SET_SIGNATURE =
 local NAME_POOL_SIGNATURE =
   '48 8D 1D ?? ?? ?? ?? 0F 1F 00 41 8B 04 24 8B C8 C1 E9 10 ' ..
   '0F B7 C0'
+
+local MOVEMENT_TYPE_SIGNATURE =
+  '48 63 81 F8 3A 00 00 85 C0 7E 0F 48 8B D0 48 8B 81 F0 3A 00 00 ' ..
+  '8A 44 10 FF C3 B0 02 C3'
 
 local function logPath()
   local source = debug.getinfo(1, 'S').source or ''
@@ -198,6 +202,7 @@ local function initializeSharedData(data)
   assert(writeQword(data + 0x68, 0)) -- primary Yaw
   assert(writeQword(data + 0x78, 0)) -- synchronized sets
   assert(writeBytes(data + 0x88, 0)) -- primary result valid
+  assert(writeQword(data + 0x90, 0)) -- movement type corrections
 end
 
 local function main()
@@ -213,6 +218,8 @@ local function main()
     OUTER_EXIT_SIGNATURE, 11, 'processor-chain commit')
   local setRotationSite = uniqueSignature(base, size,
     SET_ROTATION_SIGNATURE, 0, 'SetControlRotation')
+  local movementTypeSite = uniqueSignature(base, size,
+    MOVEMENT_TYPE_SIGNATURE, 0, 'movement rotation type getter')
   local primarySetCaller = uniqueSignature(base, size,
     PRIMARY_SET_SIGNATURE, 16, 'ordinary SetControlRotation caller')
   local limitedSetCaller = uniqueSignature(base, size,
@@ -228,6 +235,8 @@ local function main()
     'Cannot save processor-chain instructions')
   local setRotationOriginal = assert(readBytes(setRotationSite, 7, true),
     'Cannot save SetControlRotation instructions')
+  local movementTypeOriginal = assert(readBytes(movementTypeSite, 7, true),
+    'Cannot save movement rotation type instructions')
 
   local processorCode = assert(allocateMemory(0x1000, processorSite),
     'Cannot allocate memory near the processor wrapper')
@@ -235,12 +244,16 @@ local function main()
     'Cannot allocate memory near the processor-chain commit')
   local setRotationCode = assert(allocateMemory(0x1000, setRotationSite),
     'Cannot allocate memory near SetControlRotation')
+  local movementTypeCode = assert(allocateMemory(0x1000, movementTypeSite),
+    'Cannot allocate memory near the movement rotation type getter')
   assert(math.abs(processorCode - processorSite) < 0x7FFFF000,
     'Processor relay allocation is outside rel32 range')
   assert(math.abs(outerCode - outerSite) < 0x7FFFF000,
     'Outer relay allocation is outside rel32 range')
   assert(math.abs(setRotationCode - setRotationSite) < 0x7FFFF000,
     'SetControlRotation relay allocation is outside rel32 range')
+  assert(math.abs(movementTypeCode - movementTypeSite) < 0x7FFFF000,
+    'Movement rotation type relay allocation is outside rel32 range')
 
   local data = assert(allocateMemory(0x100),
     'Cannot allocate shared hook data')
@@ -257,12 +270,16 @@ define(DATA,%X)
 define(TARGETID,%X)
 define(PRIMARYCALLER,%X)
 define(LIMITEDCALLER,%X)
+define(MOVEMENTTYPE,%X)
+define(MOVEMENTCODE,%X)
 label(processorDone)
 label(outerDone)
 label(outerApply)
 label(setOriginalCode)
 label(setCapturePrimary)
 label(setOverrideLimited)
+label(movementDefault)
+label(movementDone)
 
 PROCESSORCODE:
   pushfq
@@ -371,6 +388,24 @@ setOriginalCode:
   mov [rax+08],rbx
   jmp SETROTATION+7
 
+MOVEMENTCODE:
+  movsxd rax,dword ptr [rcx+3AF8]
+  test eax,eax
+  jle movementDefault
+  mov rdx,rax
+  mov rax,[rcx+3AF0]
+  mov al,[rax+rdx-1]
+  cmp al,1
+  jne movementDone
+  mov r11,DATA
+  cmp byte ptr [r11],1
+  jne movementDone
+  lock inc qword ptr [r11+90]
+movementDefault:
+  mov al,2
+movementDone:
+  ret
+
 PROCESSOREXIT:
   jmp PROCESSORCODE
   nop 6
@@ -380,8 +415,12 @@ OUTEREXIT:
 SETROTATION:
   jmp SETCODE
   nop 2
+MOVEMENTTYPE:
+  jmp MOVEMENTCODE
+  nop 2
 ]], processorSite, outerSite, setRotationSite, processorCode, outerCode,
-    setRotationCode, data, targetId, primarySetCaller, limitedSetCaller)
+    setRotationCode, data, targetId, primarySetCaller, limitedSetCaller,
+    movementTypeSite, movementTypeCode)
 
   S.processorSite = processorSite
   S.processorOriginal = processorOriginal
@@ -389,6 +428,8 @@ SETROTATION:
   S.outerOriginal = outerOriginal
   S.setRotationSite = setRotationSite
   S.setRotationOriginal = setRotationOriginal
+  S.movementTypeSite = movementTypeSite
+  S.movementTypeOriginal = movementTypeOriginal
   S.data = data
   S.logPath = LOG_PATH
 
@@ -406,9 +447,11 @@ SETROTATION:
     local processorHits = readQword(S.data + 0x08) or 0
     local correctedFrames = readQword(S.data + 0x10) or 0
     local synchronizedSets = readQword(S.data + 0x78) or 0
+    local movementCorrections = readQword(S.data + 0x90) or 0
     report(string.format(
-      'STATUS enabled=%s processor_hits=%d corrected_frames=%d synchronized_sets=%d',
-      tostring(enabled), processorHits, correctedFrames, synchronizedSets))
+      'STATUS enabled=%s processor_hits=%d corrected_frames=%d synchronized_sets=%d movement_corrections=%d',
+      tostring(enabled), processorHits, correctedFrames, synchronizedSets,
+      movementCorrections))
   end
 
   function S.stop()
@@ -422,6 +465,8 @@ SETROTATION:
       assert(writeBytes(S.outerSite, table.unpack(S.outerOriginal)))
       assert(writeBytes(S.setRotationSite,
         table.unpack(S.setRotationOriginal)))
+      assert(writeBytes(S.movementTypeSite,
+        table.unpack(S.movementTypeOriginal)))
       S.installed = false
     end
     S.status()

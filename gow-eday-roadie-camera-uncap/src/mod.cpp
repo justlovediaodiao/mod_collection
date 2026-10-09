@@ -23,6 +23,7 @@ extern "C" {
 void RoadieProcessorDetour();
 void RoadieOuterExitDetour();
 void RoadieSetRotationDetour();
+void RoadieMovementTypeDetour();
 
 void* g_processor_return{};
 void* g_outer_return{};
@@ -60,12 +61,18 @@ constexpr char NAME_POOL_SIGNATURE[] =
     "48 8D 1D ?? ?? ?? ?? 0F 1F 00 41 8B 04 24 8B C8 C1 E9 10 "
     "0F B7 C0";
 
+constexpr char MOVEMENT_TYPE_SIGNATURE[] =
+    "48 63 81 F8 3A 00 00 85 C0 7E 0F 48 8B D0 48 8B 81 F0 3A 00 00 "
+    "8A 44 10 FF C3 B0 02 C3";
+
 constexpr std::array<uint8_t, 11> PROCESSOR_BYTES{
     0xC5, 0xF8, 0x77, 0x4C, 0x8D, 0x9C, 0x24, 0x20, 0x01, 0x00, 0x00};
 constexpr std::array<uint8_t, 11> OUTER_BYTES{
     0xC5, 0xF8, 0x77, 0x4C, 0x8D, 0x9C, 0x24, 0xB8, 0x01, 0x00, 0x00};
 constexpr std::array<uint8_t, 7> SET_ROTATION_BYTES{
     0x48, 0x8B, 0xC4, 0x48, 0x89, 0x58, 0x08};
+constexpr std::array<uint8_t, 7> MOVEMENT_TYPE_BYTES{
+    0x48, 0x63, 0x81, 0xF8, 0x3A, 0x00, 0x00};
 
 struct Rotator {
     double pitch;
@@ -98,6 +105,7 @@ struct ResolvedAddresses {
     uint8_t* processor_exit{};
     uint8_t* outer_exit{};
     uint8_t* set_rotation{};
+    uint8_t* movement_type{};
     uintptr_t primary_set_return{};
     uintptr_t limited_set_return{};
 };
@@ -315,13 +323,16 @@ bool resolve_addresses(uint8_t* base) {
         base, OUTER_EXIT_SIGNATURE, OUTER_EXIT_OFFSET);
     g_addresses.set_rotation = unique_signature(
         base, SET_ROTATION_SIGNATURE, 0);
+    g_addresses.movement_type = unique_signature(
+        base, MOVEMENT_TYPE_SIGNATURE, 0);
     auto* primary = unique_signature(
         base, PRIMARY_SET_SIGNATURE, PRIMARY_SET_RETURN_OFFSET);
     auto* limited = unique_signature(
         base, LIMITED_SET_SIGNATURE, LIMITED_SET_RETURN_OFFSET);
     if (g_addresses.processor_exit == nullptr ||
         g_addresses.outer_exit == nullptr ||
-        g_addresses.set_rotation == nullptr || primary == nullptr ||
+        g_addresses.set_rotation == nullptr ||
+        g_addresses.movement_type == nullptr || primary == nullptr ||
         limited == nullptr) {
         return false;
     }
@@ -493,6 +504,9 @@ InstallResult install_hooks() {
         {g_addresses.set_rotation, SET_ROTATION_BYTES.size(),
          SET_ROTATION_BYTES.data(),
          reinterpret_cast<void*>(&RoadieSetRotationDetour), nullptr},
+        {g_addresses.movement_type, MOVEMENT_TYPE_BYTES.size(),
+         MOVEMENT_TYPE_BYTES.data(),
+         reinterpret_cast<void*>(&RoadieMovementTypeDetour), nullptr},
     };
 
     auto* pool = g_addresses.name_pool;

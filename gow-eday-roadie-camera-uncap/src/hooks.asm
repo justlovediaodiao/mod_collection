@@ -9,6 +9,7 @@ EXTERN g_set_rotation_return:QWORD
 PUBLIC RoadieProcessorDetour
 PUBLIC RoadieOuterExitDetour
 PUBLIC RoadieSetRotationDetour
+PUBLIC RoadieMovementTypeDetour
 
 .code
 
@@ -136,5 +137,23 @@ RoadieSetRotationDetour PROC
     mov qword ptr [rax+08h], rbx
     jmp qword ptr [g_set_rotation_return]
 RoadieSetRotationDetour ENDP
+
+; Preserve the movement rotation stack and alter only the Roadie override.
+; The native getter returns 2 when the stack is empty. A Roadie stack top of 1
+; is therefore mapped to that same default; every other mode is untouched.
+RoadieMovementTypeDetour PROC
+    movsxd rax, dword ptr [rcx+3AF8h]
+    test eax, eax
+    jle movement_default
+    mov rdx, rax
+    mov rax, qword ptr [rcx+3AF0h]
+    mov al, byte ptr [rax+rdx-1]
+    cmp al, 1
+    jne movement_done
+movement_default:
+    mov al, 2
+movement_done:
+    ret
+RoadieMovementTypeDetour ENDP
 
 END

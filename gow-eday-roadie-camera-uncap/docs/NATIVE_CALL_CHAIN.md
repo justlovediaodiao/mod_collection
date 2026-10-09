@@ -13,6 +13,7 @@ All values are RVAs from `GoWEDay.exe` unless otherwise stated.
 | `SetControlRotation` | `0x15588F8` | `48 8B C4 48 89 58 08` |
 | ordinary `UpdateRotation` set return | `0x15584E7` | caller identity |
 | Roadie orientation-sync set return | `0x20EF6A0` | caller identity |
+| movement rotation type getter | `0x14479E8` | `48 63 81 F8 3A 00 00` |
 
 The C++ mod validates every patched instruction sequence before changing executable memory.
 
@@ -29,6 +30,7 @@ module match for each signature.
 | `SetControlRotation` | `48 8B C4 48 89 58 08 57 48 81 EC F0 00 00 00 C5 F8 29 70 E8 C5 FB 10 72 10 C5 F8 29 78 D8 C5 FB 10 7A 08` | `+0` |
 | ordinary set return | `48 8B 06 48 8D 55 F7 48 8B CE FF 90 E8 07 00 00 48 8B CE E8 ?? ?? ?? ?? 48 85 C0` | `+16` |
 | Roadie set return | `48 8B 07 48 8D 54 24 20 C5 FB 11 54 24 28 48 8B CF C5 F8 77 FF 90 E8 07 00 00 C5 F8 28 74 24 60` | `+26` |
+| movement rotation type getter | `48 63 81 F8 3A 00 00 85 C0 7E 0F 48 8B D0 48 8B 81 F0 3A 00 00 8A 44 10 FF C3 B0 02 C3` | `+0` |
 
 `FNamePool` uses one independently verified signature:
 
@@ -47,13 +49,12 @@ changed stack layouts compatible. Zero or multiple matches stop installation.
 ## Loader Initialization
 
 `mod_loader` can load the mod before the campaign package has registered the
-target Blueprint class. The mod therefore validates the executable image and
-all three original instruction sequences first, then waits on its worker thread
+target Blueprint class. The mod resolves all hook signatures, then waits on its worker thread
 until the current-process FName pool contains the target class. It installs the
-three hooks once and never relies on a UObject address from an earlier process.
+four hooks once and never relies on a UObject address from an earlier process.
 
-An executable mismatch is fatal and is never retried. A missing target FName is
-treated as normal package-loading state and is retried without patching code.
+Signature resolution is retried up to 30 times. A missing target FName is
+retried without patching code.
 
 ## Blueprint Dispatch
 
@@ -152,7 +153,22 @@ ordinary controller curve: rises to approximately 411.7 degrees/second
 
 The ordinary controller acceleration curve crosses from ordinary movement into Roadie without resetting. The discontinuity is produced by the Roadie speed processor and the second controller-rotation commit, not by Enhanced Input.
 
-## Final Three-Site Correction
+## Roadie Movement Rotation Override
+
+`TCCharacterMovementContextComponent::GetMovementRotationType` reads the last
+byte in `MovementRotationTypeStack`. If the stack is empty, it returns type
+`2`:
+
+```text
+stack data            movement component + 0x3AF0
+stack count           movement component + 0x3AF8
+Roadie stack top      1
+empty-stack default   2
+```
+
+Type `2` restores camera-relative steering during large Roadie Run turns.
+
+## Final Four-Site Correction
 
 ### 1. Processor wrapper exit
 
@@ -181,17 +197,27 @@ Pitch and Roll are untouched.
 
 ### 3. SetControlRotation pairing
 
-On the ordinary `UpdateRotation` caller (`0x15584E7`), save the controller pointer and requested Yaw for the current thread. On the Roadie orientation-sync caller (`0x20EF6A0`), replace only requested Yaw with that saved value when the controller and thread match.
+On the ordinary `UpdateRotation` caller (`0x15584E7`), save requested Yaw in
+shared state keyed by controller. On the Roadie orientation-sync caller
+(`0x20EF6A0`), consume that controller's saved value and replace only requested Yaw.
+
+The two controller commits can run on different threads, so shared state is
+protected by an SRW lock. The synchronous processor-wrapper and outer-commit
+pair keeps thread-local state.
 
 This pairing covers PreRoadie transition frames before the sustained Roadie processor appears, while preserving the ordinary gamepad response.
 
+### 4. Movement rotation type
+
+Reproduce the native stack lookup and change only a returned top value of `1`
+to the native empty-stack default `2`. An empty stack and every other enum value
+are returned unchanged.
+
 ## Relocation Procedure After a Game Update
 
-The executable reference implementation is
-[`reference/Roadie-CameraUncap.lua`](reference/Roadie-CameraUncap.lua). It uses the
-same three sites and correction rules as the C++ mod. Use it as the first live
-test after relocating a new build, then transfer only verified values to
-`src/mod.cpp` and `src/hooks.asm`.
+[`reference/Roadie-CameraUncap.lua`](reference/Roadie-CameraUncap.lua) covers
+all four hook sites. Use it as the first live test after relocating a new
+build, then transfer verified values to `src/mod.cpp` and `src/hooks.asm`.
 
 ### Running the Cheat Engine reference
 
@@ -199,8 +225,8 @@ test after relocating a new build, then transfer only verified values to
 2. Attach Cheat Engine to `GoWEDay.exe`.
 3. Execute `docs/reference/Roadie-CameraUncap.lua` from Cheat Engine's Lua engine.
 4. Test ordinary movement, PreRoadie, sustained Roadie Run, and exit with a
-   controller.
-5. Run `RoadieCameraUncap.status()` to write the three counters to the status log.
+   controller, including sprint steering during large camera turns.
+5. Run `RoadieCameraUncap.status()` to write the four counters to the status log.
 6. Run `RoadieCameraUncap.stop()` before detaching Cheat Engine or closing it
    while the game remains open.
 
@@ -208,14 +234,12 @@ The script has no timed capture or phase controls. It enables the correction
 immediately and writes `Roadie-CameraUncap-status.log` next to the script when it
 was loaded with `dofile`; pasted scripts use the current user's temporary
 directory. `stop()` records the final counters automatically. The Lua version
-uses one shared validation state because the verified camera path executes on
-the game thread; the released C++ implementation uses thread-local state and
-is the distribution implementation.
+uses one shared validation state.
 
-After an update, the script must reject the build until the six signatures,
-three expected-byte arrays, stolen instruction lengths, stack offsets, and
-replayed instructions have all been revalidated. A successful assembly is not sufficient:
-all three counters must advance in the appropriate Roadie transitions, and the
+After an update, revalidate all seven mod signatures, four expected-byte arrays,
+stolen instruction lengths, stack offsets, and replayed instructions. The Lua
+reference covers the same seven signatures and four hooks. A successful assembly is not sufficient:
+all four counters must advance in the appropriate Roadie transitions, and the
 controller validation matrix below must pass before updating the C++ source.
 
 ### Phase A: re-establish reflection anchors
@@ -256,7 +280,9 @@ controller validation matrix below must pass before updating the C++ source.
 2. Update all expected original-byte arrays.
 3. If a stolen instruction changes, update the corresponding replay sequence in `src/hooks.asm` and its stolen length.
 4. Reconfirm all stack offsets and Windows x64 alignment at each detour.
-5. Build with the MSVC x64 toolchain.
+5. Reconfirm that the movement getter still uses `+0x3AF0/+0x3AF8`, that an
+   empty stack returns `2`, and that the Roadie override remains `1`.
+6. Build with the MSVC x64 toolchain.
 
 ## Validation Matrix
 
@@ -273,6 +299,7 @@ Required results:
 - no change when leaving Roadie;
 - identical ordinary and Roadie horizontal response;
 - unchanged Pitch and Roll;
+- actual sprint trajectory follows large camera turns;
 - no effect in ADS, menus, pause, cover transitions, executions, cinematics, or external camera control;
 - stable behavior across map loads and Pawn recreation.
 
