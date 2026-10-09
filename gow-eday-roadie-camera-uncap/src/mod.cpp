@@ -286,11 +286,9 @@ std::vector<uint8_t*> scan_executable(uint8_t* base,
 }
 
 uint8_t* unique_signature(uint8_t* base, const char* signature,
-                          std::ptrdiff_t result_offset, const char* label) {
+                          std::ptrdiff_t result_offset) {
     const std::vector<uint8_t*> matches = scan_executable(base, signature);
     if (matches.size() != 1) {
-        logf("roadie_camera_uncap: %s signature produced %zu matches", label,
-             matches.size());
         return nullptr;
     }
     return matches[0] + result_offset;
@@ -304,18 +302,15 @@ uint8_t* resolve_rip(uint8_t* instruction, std::ptrdiff_t adjustment) {
 
 bool resolve_addresses(uint8_t* base) {
     g_addresses.processor_exit = unique_signature(
-        base, PROCESSOR_EXIT_SIGNATURE, PROCESSOR_EXIT_OFFSET,
-        "processor exit");
+        base, PROCESSOR_EXIT_SIGNATURE, PROCESSOR_EXIT_OFFSET);
     g_addresses.outer_exit = unique_signature(
-        base, OUTER_EXIT_SIGNATURE, OUTER_EXIT_OFFSET, "outer exit");
+        base, OUTER_EXIT_SIGNATURE, OUTER_EXIT_OFFSET);
     g_addresses.set_rotation = unique_signature(
-        base, SET_ROTATION_SIGNATURE, 0, "SetControlRotation");
+        base, SET_ROTATION_SIGNATURE, 0);
     auto* primary = unique_signature(
-        base, PRIMARY_SET_SIGNATURE, PRIMARY_SET_RETURN_OFFSET,
-        "primary SetControlRotation caller");
+        base, PRIMARY_SET_SIGNATURE, PRIMARY_SET_RETURN_OFFSET);
     auto* limited = unique_signature(
-        base, LIMITED_SET_SIGNATURE, LIMITED_SET_RETURN_OFFSET,
-        "Roadie SetControlRotation caller");
+        base, LIMITED_SET_SIGNATURE, LIMITED_SET_RETURN_OFFSET);
     if (g_addresses.processor_exit == nullptr ||
         g_addresses.outer_exit == nullptr ||
         g_addresses.set_rotation == nullptr || primary == nullptr ||
@@ -326,7 +321,7 @@ bool resolve_addresses(uint8_t* base) {
     g_addresses.limited_set_return = reinterpret_cast<uintptr_t>(limited);
 
     uint8_t* pool_reference = unique_signature(
-        base, NAME_POOL_SIGNATURE, 0, "FNamePool");
+        base, NAME_POOL_SIGNATURE, 0);
     if (pool_reference == nullptr) {
         return false;
     }
