@@ -546,9 +546,15 @@ InstallResult install_hooks() {
 
 DWORD WINAPI worker(void*) {
     auto* game = reinterpret_cast<uint8_t*>(GetModuleHandleW(nullptr));
-    if (!resolve_addresses(game)) {
-        log("roadie_camera_uncap: signature resolution failed; no hooks installed");
-        return 0;
+    Sleep(5000);
+    unsigned int scan_count = 0;
+    while (!resolve_addresses(game)) {
+        if (++scan_count >= 30) {
+            log("roadie_camera_uncap: signature resolution failed after 30 "
+                "attempts; no hooks installed");
+            return 0;
+        }
+        Sleep(1000);
     }
     log("roadie_camera_uncap: waiting for the Roadie camera class");
     for (;;) {
