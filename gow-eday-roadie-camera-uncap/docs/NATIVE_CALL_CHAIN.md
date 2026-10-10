@@ -13,9 +13,10 @@ All values are RVAs from `GoWEDay.exe` unless otherwise stated.
 | `SetControlRotation` | `0x15588F8` | `48 8B C4 48 89 58 08` |
 | ordinary `UpdateRotation` set return | `0x15584E7` | caller identity |
 | Roadie orientation-sync set return | `0x20EF6A0` | caller identity |
-| movement rotation type getter | `0x14479E8` | `48 63 81 F8 3A 00 00` |
+| movement rotation push setup | `0x20F14AD` | `8A D0 48 8B CB` |
 
-The C++ mod validates every patched instruction sequence before changing executable memory.
+The AOB signatures contain the original bytes at each patch site. The expected-byte
+arrays are used for rollback; installation does not perform a separate byte comparison.
 
 ## Runtime AOB Resolution
 
@@ -30,7 +31,7 @@ module match for each signature.
 | `SetControlRotation` | `48 8B C4 48 89 58 08 57 48 81 EC F0 00 00 00 C5 F8 29 70 E8 C5 FB 10 72 10 C5 F8 29 78 D8 C5 FB 10 7A 08` | `+0` |
 | ordinary set return | `48 8B 06 48 8D 55 F7 48 8B CE FF 90 E8 07 00 00 48 8B CE E8 ?? ?? ?? ?? 48 85 C0` | `+16` |
 | Roadie set return | `48 8B 07 48 8D 54 24 20 C5 FB 11 54 24 28 48 8B CF C5 F8 77 FF 90 E8 07 00 00 C5 F8 28 74 24 60` | `+26` |
-| movement rotation type getter | `48 63 81 F8 3A 00 00 85 C0 7E 0F 48 8B D0 48 8B 81 F0 3A 00 00 8A 44 10 FF C3 B0 02 C3` | `+0` |
+| movement rotation push setup | `48 89 5C 24 08 57 48 83 EC 20 48 8B D9 E8 D2 63 35 FF 48 8B F8 48 85 C0 74 29 48 8B CB E8 ?? ?? ?? ?? 48 8B C8 48 8B D8 E8 ?? ?? ?? ?? 48 8D 8F 30 01 00 00 E8 ?? ?? ?? ?? 8A D0 48 8B CB E8 ?? ?? ?? ?? 48 8B 5C 24 30` | `+57` |
 
 `FNamePool` uses one independently verified signature:
 
@@ -41,7 +42,8 @@ module match for each signature.
 The RIP-relative `lea` resolves `FNamePool.Blocks`; subtracting `0x10`
 produces the pool base. The current full-module audit produced one match and
 resolved RVA `0xEBA1CC0`. The resolver then requires FName 0 to equal `None`
-and requires the target class name to exist before installing hooks.
+and requires both the camera class and `FairlightMovementContextRoadieRunTuning`
+names to exist before installing hooks.
 
 Signatures relocate unchanged code; they do not make changed machine code or
 changed stack layouts compatible. Zero or multiple matches stop installation.
@@ -50,8 +52,8 @@ changed stack layouts compatible. Zero or multiple matches stop installation.
 
 `mod_loader` can load the mod before the campaign package has registered the
 target Blueprint class. The mod resolves all hook signatures, then waits on its worker thread
-until the current-process FName pool contains the target class. It installs the
-four hooks once and never relies on a UObject address from an earlier process.
+until the current-process FName pool contains the camera class and Roadie tuning
+type. It installs the four hooks once and never relies on a UObject address from an earlier process.
 
 Signature resolution is retried up to 30 times. A missing target FName is
 retried without patching code.
@@ -166,7 +168,28 @@ Roadie stack top      1
 empty-stack default   2
 ```
 
-Type `2` restores camera-relative steering during large Roadie Run turns.
+Type `1` follows control/camera direction; type `2` follows acceleration
+direction. Type `2` restores sprint steering during large Roadie Run turns.
+Ordinary movement also uses `1`; globally mapping it to `2` changes ordinary
+facing and can block firing when facing differs from aim direction. The getter
+at `0x14479E8` therefore remains untouched.
+
+The replacement hook is at `0x20F14AD` in the tuning helper (`0x20F1474`),
+before it calls the native rotation-stack push function (`0x5978FD0`).
+AL contains the tuning rotation type; RBX is the movement component, and RDI
+is raw tuning data. The helper's caller (`0x20F1228`) holds the movement context
+in RBX, which the helper saves at `[rsp+0x30]`.
+
+```text
+[rsp+0x30]            movement context pointer (saved caller RBX)
+context + 0x28        FInstancedStruct UScriptStruct type pointer
+context + 0x30        raw tuning data pointer
+UScriptStruct + 0x18  tuning type FName ID
+raw tuning + 0x130   rotation type
+```
+
+Identify Roadie by the descriptor FName `FairlightMovementContextRoadieRunTuning`.
+Raw tuning data is not a UObject; its `+0x10` is not a class pointer.
 
 ## Final Four-Site Correction
 
@@ -209,9 +232,10 @@ This pairing covers PreRoadie transition frames before the sustained Roadie proc
 
 ### 4. Movement rotation type
 
-Reproduce the native stack lookup and change only a returned top value of `1`
-to the native empty-stack default `2`. An empty stack and every other enum value
-are returned unchanged.
+Replay `mov dl,al`; change DL from `1` to `2` only for Roadie tuning.
+Replay `mov rcx,rbx` and resume at `0x20F14B2`, so the native push function
+handles the stack. The detour does not change RSP. Non-Roadie tuning and all
+other rotation types pass through unchanged.
 
 ## Relocation Procedure After a Game Update
 
@@ -221,11 +245,13 @@ build, then transfer verified values to `src/mod.cpp` and `src/hooks.asm`.
 
 ### Running the Cheat Engine reference
 
-1. Start the game and enter Campaign so the Roadie camera class is registered.
+1. Disable the DLL mod, start the game, and enter Campaign so the Roadie camera
+   class is registered.
 2. Attach Cheat Engine to `GoWEDay.exe`.
 3. Execute `docs/reference/Roadie-CameraUncap.lua` from Cheat Engine's Lua engine.
 4. Test ordinary movement, PreRoadie, sustained Roadie Run, and exit with a
-   controller, including sprint steering during large camera turns.
+   controller, including sprint steering during large camera turns and ordinary
+   aiming/firing while initially facing away from the camera.
 5. Run `RoadieCameraUncap.status()` to write the four counters to the status log.
 6. Run `RoadieCameraUncap.stop()` before detaching Cheat Engine or closing it
    while the game remains open.
@@ -244,7 +270,9 @@ controller validation matrix below must pass before updating the C++ source.
 
 ### Phase A: re-establish reflection anchors
 
-1. Complete the UE4SS adaptation checklist.
+Use this phase when the Blueprint behavior or dispatch path needs rediscovery.
+
+1. If using UE4SS, complete the UE4SS adaptation checklist.
 2. Resolve the target Blueprint class and `BlueprintProcessViewRotation` UFunction in the new process.
 3. Reconfirm the parameter structure, FRotator size, and current Roadie blackboard key.
 4. Reconfirm that `InDeltaRot.Yaw` remains ordinary while `OutDeltaRot.Yaw` is reduced.
@@ -280,8 +308,10 @@ controller validation matrix below must pass before updating the C++ source.
 2. Update all expected original-byte arrays.
 3. If a stolen instruction changes, update the corresponding replay sequence in `src/hooks.asm` and its stolen length.
 4. Reconfirm all stack offsets and Windows x64 alignment at each detour.
-5. Reconfirm that the movement getter still uses `+0x3AF0/+0x3AF8`, that an
-   empty stack returns `2`, and that the Roadie override remains `1`.
+5. Reconfirm the movement helper and caller: saved RBX at `[rsp+0x30]`,
+   context type at `+0x28`, type FName at `+0x18`, and rotation input in AL.
+   Check the caller's context register even if the helper AOB still matches.
+   Confirm Roadie tuning still uses `1` and the replacement remains `2`.
 6. Build with the MSVC x64 toolchain.
 
 ## Validation Matrix
@@ -300,6 +330,7 @@ Required results:
 - identical ordinary and Roadie horizontal response;
 - unchanged Pitch and Roll;
 - actual sprint trajectory follows large camera turns;
+- ordinary aiming/firing works when initially facing away from the camera;
 - no effect in ADS, menus, pause, cover transitions, executions, cinematics, or external camera control;
 - stable behavior across map loads and Pawn recreation.
 

@@ -5,6 +5,8 @@ EXTERN RoadieOnSetControlRotation:PROC
 EXTERN g_processor_return:QWORD
 EXTERN g_outer_return:QWORD
 EXTERN g_set_rotation_return:QWORD
+EXTERN g_movement_rotation_return:QWORD
+EXTERN g_roadie_tuning_class_id:DWORD
 
 PUBLIC RoadieProcessorDetour
 PUBLIC RoadieOuterExitDetour
@@ -138,22 +140,25 @@ RoadieSetRotationDetour PROC
     jmp qword ptr [g_set_rotation_return]
 RoadieSetRotationDetour ENDP
 
-; Preserve the movement rotation stack and alter only the Roadie override.
-; The native getter returns 2 when the stack is empty. A Roadie stack top of 1
-; is therefore mapped to that same default; every other mode is untouched.
+; RDI is raw tuning data, not a UObject. The sole caller of this helper
+; holds the movement context in RBX; its saved RBX is at RSP+30h here.
+; Context+28h is the FInstancedStruct UScriptStruct pointer; context+30h
+; is its raw data pointer. Check the descriptor's FName, not the raw data.
 RoadieMovementTypeDetour PROC
-    movsxd rax, dword ptr [rcx+3AF8h]
-    test eax, eax
-    jle movement_default
-    mov rdx, rax
-    mov rax, qword ptr [rcx+3AF0h]
-    mov al, byte ptr [rax+rdx-1]
+    mov dl, al
     cmp al, 1
     jne movement_done
-movement_default:
-    mov al, 2
+    mov r11, qword ptr [rsp+30h]
+    mov r11, qword ptr [r11+28h]
+    test r11, r11
+    je movement_done
+    mov r11d, dword ptr [r11+18h]
+    cmp r11d, dword ptr [g_roadie_tuning_class_id]
+    jne movement_done
+    mov dl, 2
 movement_done:
-    ret
+    mov rcx, rbx
+    jmp qword ptr [g_movement_rotation_return]
 RoadieMovementTypeDetour ENDP
 
 END

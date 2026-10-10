@@ -21,6 +21,7 @@ local S = {}
 RoadieCameraUncap = S
 
 local TARGET_CLASS = 'CamBridge_ViewProcessor_SpeedLimits_RoadieRun_C'
+local ROADIE_TUNING_CLASS = 'FairlightMovementContextRoadieRunTuning'
 
 local PROCESSOR_EXIT_SIGNATURE =
   'C4 E2 E1 B9 D1 C5 FB 11 51 10 C5 F8 77 4C 8D 9C 24 20 01 00 00'
@@ -40,9 +41,12 @@ local NAME_POOL_SIGNATURE =
   '48 8D 1D ?? ?? ?? ?? 0F 1F 00 41 8B 04 24 8B C8 C1 E9 10 ' ..
   '0F B7 C0'
 
-local MOVEMENT_TYPE_SIGNATURE =
-  '48 63 81 F8 3A 00 00 85 C0 7E 0F 48 8B D0 48 8B 81 F0 3A 00 00 ' ..
-  '8A 44 10 FF C3 B0 02 C3'
+local MOVEMENT_PUSH_SIGNATURE =
+  '48 89 5C 24 08 57 48 83 EC 20 48 8B D9 E8 D2 63 35 FF ' ..
+  '48 8B F8 48 85 C0 74 29 ' ..
+  '48 8B CB E8 ?? ?? ?? ?? 48 8B C8 48 8B D8 E8 ?? ?? ?? ?? ' ..
+  '48 8D 8F 30 01 00 00 E8 ?? ?? ?? ?? 8A D0 48 8B CB ' ..
+  'E8 ?? ?? ?? ?? 48 8B 5C 24 30'
 
 local function logPath()
   local source = debug.getinfo(1, 'S').source or ''
@@ -219,7 +223,7 @@ local function main()
   local setRotationSite = uniqueSignature(base, size,
     SET_ROTATION_SIGNATURE, 0, 'SetControlRotation')
   local movementTypeSite = uniqueSignature(base, size,
-    MOVEMENT_TYPE_SIGNATURE, 0, 'movement rotation type getter')
+    MOVEMENT_PUSH_SIGNATURE, 57, 'movement rotation tuning push')
   local primarySetCaller = uniqueSignature(base, size,
     PRIMARY_SET_SIGNATURE, 16, 'ordinary SetControlRotation caller')
   local limitedSetCaller = uniqueSignature(base, size,
@@ -228,6 +232,7 @@ local function main()
   local pool = resolveNamePool(base, size)
   assert(readName(pool, 0) == 'None', 'FNamePool validation failed')
   local targetId = findNameId(pool, TARGET_CLASS)
+  local roadieTuningId = findNameId(pool, ROADIE_TUNING_CLASS)
 
   local processorOriginal = assert(readBytes(processorSite, 11, true),
     'Cannot save processor wrapper instructions')
@@ -235,7 +240,7 @@ local function main()
     'Cannot save processor-chain instructions')
   local setRotationOriginal = assert(readBytes(setRotationSite, 7, true),
     'Cannot save SetControlRotation instructions')
-  local movementTypeOriginal = assert(readBytes(movementTypeSite, 7, true),
+  local movementTypeOriginal = assert(readBytes(movementTypeSite, 5, true),
     'Cannot save movement rotation type instructions')
 
   local processorCode = assert(allocateMemory(0x1000, processorSite),
@@ -245,7 +250,7 @@ local function main()
   local setRotationCode = assert(allocateMemory(0x1000, setRotationSite),
     'Cannot allocate memory near SetControlRotation')
   local movementTypeCode = assert(allocateMemory(0x1000, movementTypeSite),
-    'Cannot allocate memory near the movement rotation type getter')
+    'Cannot allocate memory near the movement rotation tuning push')
   assert(math.abs(processorCode - processorSite) < 0x7FFFF000,
     'Processor relay allocation is outside rel32 range')
   assert(math.abs(outerCode - outerSite) < 0x7FFFF000,
@@ -272,13 +277,13 @@ define(PRIMARYCALLER,%X)
 define(LIMITEDCALLER,%X)
 define(MOVEMENTTYPE,%X)
 define(MOVEMENTCODE,%X)
+define(ROADIETUNINGID,%X)
 label(processorDone)
 label(outerDone)
 label(outerApply)
 label(setOriginalCode)
 label(setCapturePrimary)
 label(setOverrideLimited)
-label(movementDefault)
 label(movementDone)
 
 PROCESSORCODE:
@@ -389,22 +394,23 @@ setOriginalCode:
   jmp SETROTATION+7
 
 MOVEMENTCODE:
-  movsxd rax,dword ptr [rcx+3AF8]
-  test eax,eax
-  jle movementDefault
-  mov rdx,rax
-  mov rax,[rcx+3AF0]
-  mov al,[rax+rdx-1]
+  mov dl,al
   cmp al,1
+  jne movementDone
+  mov r11,[rsp+30]
+  mov r11,[r11+28]
+  test r11,r11
+  je movementDone
+  cmp dword ptr [r11+18],ROADIETUNINGID
   jne movementDone
   mov r11,DATA
   cmp byte ptr [r11],1
   jne movementDone
   lock inc qword ptr [r11+90]
-movementDefault:
-  mov al,2
+  mov dl,2
 movementDone:
-  ret
+  mov rcx,rbx
+  jmp MOVEMENTTYPE+5
 
 PROCESSOREXIT:
   jmp PROCESSORCODE
@@ -417,10 +423,9 @@ SETROTATION:
   nop 2
 MOVEMENTTYPE:
   jmp MOVEMENTCODE
-  nop 2
 ]], processorSite, outerSite, setRotationSite, processorCode, outerCode,
     setRotationCode, data, targetId, primarySetCaller, limitedSetCaller,
-    movementTypeSite, movementTypeCode)
+    movementTypeSite, movementTypeCode, roadieTuningId)
 
   S.processorSite = processorSite
   S.processorOriginal = processorOriginal
@@ -479,7 +484,8 @@ MOVEMENTTYPE:
   S.installed = true
   S.setEnabled(true)
   report(string.format(
-    'READY target FName=0x%X; native correction installed', targetId))
+    'READY camera FName=0x%X Roadie tuning FName=0x%X; native correction installed',
+    targetId, roadieTuningId))
   report('log file: ' .. LOG_PATH)
 end
 

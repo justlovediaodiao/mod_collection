@@ -28,12 +28,16 @@ void RoadieMovementTypeDetour();
 void* g_processor_return{};
 void* g_outer_return{};
 void* g_set_rotation_return{};
+void* g_movement_rotation_return{};
+uint32_t g_roadie_tuning_class_id{};
 }
 
 namespace {
 
 constexpr char TARGET_CLASS[] =
     "CamBridge_ViewProcessor_SpeedLimits_RoadieRun_C";
+constexpr char ROADIE_TUNING_CLASS[] =
+    "FairlightMovementContextRoadieRunTuning";
 
 constexpr char PROCESSOR_EXIT_SIGNATURE[] =
     "C4 E2 E1 B9 D1 C5 FB 11 51 10 C5 F8 77 4C 8D 9C 24 20 01 00 00";
@@ -61,9 +65,13 @@ constexpr char NAME_POOL_SIGNATURE[] =
     "48 8D 1D ?? ?? ?? ?? 0F 1F 00 41 8B 04 24 8B C8 C1 E9 10 "
     "0F B7 C0";
 
-constexpr char MOVEMENT_TYPE_SIGNATURE[] =
-    "48 63 81 F8 3A 00 00 85 C0 7E 0F 48 8B D0 48 8B 81 F0 3A 00 00 "
-    "8A 44 10 FF C3 B0 02 C3";
+constexpr char MOVEMENT_ROTATION_PUSH_SIGNATURE[] =
+    "48 89 5C 24 08 57 48 83 EC 20 48 8B D9 E8 D2 63 35 FF "
+    "48 8B F8 48 85 C0 74 29 "
+    "48 8B CB E8 ?? ?? ?? ?? 48 8B C8 48 8B D8 E8 ?? ?? ?? ?? "
+    "48 8D 8F 30 01 00 00 E8 ?? ?? ?? ?? 8A D0 48 8B CB "
+    "E8 ?? ?? ?? ?? 48 8B 5C 24 30";
+constexpr std::ptrdiff_t MOVEMENT_ROTATION_PUSH_OFFSET = 57;
 
 constexpr std::array<uint8_t, 11> PROCESSOR_BYTES{
     0xC5, 0xF8, 0x77, 0x4C, 0x8D, 0x9C, 0x24, 0x20, 0x01, 0x00, 0x00};
@@ -71,8 +79,8 @@ constexpr std::array<uint8_t, 11> OUTER_BYTES{
     0xC5, 0xF8, 0x77, 0x4C, 0x8D, 0x9C, 0x24, 0xB8, 0x01, 0x00, 0x00};
 constexpr std::array<uint8_t, 7> SET_ROTATION_BYTES{
     0x48, 0x8B, 0xC4, 0x48, 0x89, 0x58, 0x08};
-constexpr std::array<uint8_t, 7> MOVEMENT_TYPE_BYTES{
-    0x48, 0x63, 0x81, 0xF8, 0x3A, 0x00, 0x00};
+constexpr std::array<uint8_t, 5> MOVEMENT_ROTATION_PUSH_BYTES{
+    0x8A, 0xD0, 0x48, 0x8B, 0xCB};
 
 struct Rotator {
     double pitch;
@@ -105,7 +113,7 @@ struct ResolvedAddresses {
     uint8_t* processor_exit{};
     uint8_t* outer_exit{};
     uint8_t* set_rotation{};
-    uint8_t* movement_type{};
+    uint8_t* movement_rotation_push{};
     uintptr_t primary_set_return{};
     uintptr_t limited_set_return{};
 };
@@ -323,8 +331,9 @@ bool resolve_addresses(uint8_t* base) {
         base, OUTER_EXIT_SIGNATURE, OUTER_EXIT_OFFSET);
     g_addresses.set_rotation = unique_signature(
         base, SET_ROTATION_SIGNATURE, 0);
-    g_addresses.movement_type = unique_signature(
-        base, MOVEMENT_TYPE_SIGNATURE, 0);
+    g_addresses.movement_rotation_push = unique_signature(
+        base, MOVEMENT_ROTATION_PUSH_SIGNATURE,
+        MOVEMENT_ROTATION_PUSH_OFFSET);
     auto* primary = unique_signature(
         base, PRIMARY_SET_SIGNATURE, PRIMARY_SET_RETURN_OFFSET);
     auto* limited = unique_signature(
@@ -332,7 +341,7 @@ bool resolve_addresses(uint8_t* base) {
     if (g_addresses.processor_exit == nullptr ||
         g_addresses.outer_exit == nullptr ||
         g_addresses.set_rotation == nullptr ||
-        g_addresses.movement_type == nullptr || primary == nullptr ||
+        g_addresses.movement_rotation_push == nullptr || primary == nullptr ||
         limited == nullptr) {
         return false;
     }
@@ -504,14 +513,17 @@ InstallResult install_hooks() {
         {g_addresses.set_rotation, SET_ROTATION_BYTES.size(),
          SET_ROTATION_BYTES.data(),
          reinterpret_cast<void*>(&RoadieSetRotationDetour), nullptr},
-        {g_addresses.movement_type, MOVEMENT_TYPE_BYTES.size(),
-         MOVEMENT_TYPE_BYTES.data(),
+        {g_addresses.movement_rotation_push,
+         MOVEMENT_ROTATION_PUSH_BYTES.size(),
+         MOVEMENT_ROTATION_PUSH_BYTES.data(),
          reinterpret_cast<void*>(&RoadieMovementTypeDetour), nullptr},
     };
 
     auto* pool = g_addresses.name_pool;
     if (!name_equals(pool, 0, "None") ||
-        !find_name_id(pool, TARGET_CLASS, g_target_class_id)) {
+        !find_name_id(pool, TARGET_CLASS, g_target_class_id) ||
+        !find_name_id(pool, ROADIE_TUNING_CLASS,
+                      g_roadie_tuning_class_id)) {
         return InstallResult::retry;
     }
 
@@ -536,6 +548,7 @@ InstallResult install_hooks() {
     g_processor_return = hooks[0].address + hooks[0].length;
     g_outer_return = hooks[1].address + hooks[1].length;
     g_set_rotation_return = hooks[2].address + hooks[2].length;
+    g_movement_rotation_return = hooks[3].address + hooks[3].length;
 
     SuspendedThreads suspended;
     if (!suspended.suspend()) {
@@ -556,8 +569,10 @@ InstallResult install_hooks() {
         return InstallResult::fatal;
     }
 
-    logf("roadie_camera_uncap: installed (target FName 0x%08X)",
-         static_cast<unsigned int>(g_target_class_id));
+    logf("roadie_camera_uncap: installed (camera FName 0x%08X, Roadie tuning "
+         "FName 0x%08X)",
+         static_cast<unsigned int>(g_target_class_id),
+         static_cast<unsigned int>(g_roadie_tuning_class_id));
     return InstallResult::installed;
 }
 

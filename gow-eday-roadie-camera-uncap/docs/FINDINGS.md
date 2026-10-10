@@ -10,25 +10,22 @@ Two downstream operations create the discontinuity:
 2. Roadie character-orientation synchronization calls `SetControlRotation` after ordinary controller update and restores the slow character-facing Yaw during the transition.
 
 A separate Roadie movement override uses rotation type `1`, restricting sprint
-steering during large camera turns. The native default type `2` restores
-camera-relative steering.
+steering during large camera turns. Changing the Roadie tuning value to the
+native default type `2` restores sprint steering. Ordinary movement also uses
+type `1`, so a global getter override can alter ordinary facing and block firing
+when the character faces away from the aim direction.
 
 The ordinary controller acceleration curve remains valid and reaches approximately 411.7 degrees/second. It should be preserved, not replaced with a fixed speed.
-
-## Required Behavior
-
-For the same controller input, horizontal camera response must be identical in ordinary movement, PreRoadieRun, sustained Roadie Run, and the exit transition.
-
-Sprint trajectory must follow large camera turns during Roadie Run.
 
 ## Implemented Correction
 
 - Dynamically resolve the target processor class FName in the current process.
 - Recover the Yaw removed by the Roadie speed processor at its native wrapper exit.
 - Add only that difference to the final camera-chain ViewRotation.
-- Pair the ordinary and Roadie `SetControlRotation` calls through synchronized shared state keyed by controller.
-- Replace only the later Roadie Yaw with the ordinary per-frame Yaw.
-- Map movement rotation type `1` to the native default type `2`.
+- Pair the ordinary and Roadie `SetControlRotation` calls by controller, replacing
+  only the later Roadie Yaw with the ordinary per-frame Yaw.
+- Before the native rotation-stack push, map `1` to `2` only for
+  `FairlightMovementContextRoadieRunTuning`, identified by its current-process FName.
 - Preserve Pitch, Roll, Enhanced Input, dead zones, sensitivity, and the normal gamepad acceleration curve.
 
 ## Why Simpler Changes Fail
@@ -44,12 +41,11 @@ Sprint trajectory must follow large camera turns during Roadie Run.
 The released C++ mod:
 
 - has no UE4SS or Cheat Engine runtime dependency;
-- modifies camera Yaw and movement rotation type only;
 - identifies the Blueprint processor by current-process FName rather than a stale UObject address;
 - restricts controller synchronization to two verified native caller identities and the same PlayerController;
-- validates the original executable bytes before installation;
-- preserves movement rotation types other than `1`;
-- aborts without patching an unsupported game build.
+- requires unique executable AOB matches containing the original hook bytes;
+- leaves the global movement getter, non-Roadie tuning, and rotation types other than `1` unchanged;
+- installs no hooks if signature resolution fails.
 
 ## Verified Result
 
