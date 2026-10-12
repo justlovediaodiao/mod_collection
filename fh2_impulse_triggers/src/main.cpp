@@ -31,25 +31,6 @@ static_assert(sizeof(GameVibration) == 16);
 using VibrationSetter = HRESULT(WINAPI*)(void*, const GameVibration*);
 VibrationSetter g_original_setter = nullptr;
 
-class WinrtApartment {
-public:
-    WinrtApartment() : result(RoInitialize(RO_INIT_MULTITHREADED)) {
-        if (result == RPC_E_CHANGED_MODE) {
-            result = RoInitialize(RO_INIT_SINGLETHREADED);
-        }
-    }
-
-    ~WinrtApartment() {
-        if (SUCCEEDED(result)) {
-            RoUninitialize();
-        }
-    }
-
-    WinrtApartment(const WinrtApartment&) = delete;
-    WinrtApartment& operator=(const WinrtApartment&) = delete;
-    HRESULT result;
-};
-
 BYTE* find_aob(BYTE* base, const BYTE* pattern, size_t length, bool executable) {
     const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
     const auto* pe = reinterpret_cast<const IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
@@ -80,16 +61,24 @@ HRESULT WINAPI capture_vibration(void* controller, const GameVibration* value) {
         return g_original_setter(controller, value);
     }
     {
-        WinrtApartment apartment;
-        if (SUCCEEDED(apartment.result)) {
-            Gamepad gamepad{nullptr};
+        // Keep WinRT initialized for this calling thread's use of the mod.
+        thread_local const HRESULT initialization = [] {
+            HRESULT result = RoInitialize(RO_INIT_MULTITHREADED);
+            if (result == RPC_E_CHANGED_MODE) {
+                result = RoInitialize(RO_INIT_SINGLETHREADED);
+            }
+            return result;
+        }();
+        if (SUCCEEDED(initialization)) {
+            thread_local Gamepad gamepad{nullptr};
             try {
-                const auto gamepads = Gamepad::Gamepads();
-                if (gamepads.Size() > 0) {
-                    gamepad = gamepads.GetAt(0);
+                if (!gamepad) {
+                    const auto gamepads = Gamepad::Gamepads();
+                    if (gamepads.Size() > 0) {
+                        gamepad = gamepads.GetAt(0);
+                    }
                 }
             } catch (...) {
-                // No controller selected; use the original function below.
             }
 
             if (gamepad) {
@@ -97,7 +86,8 @@ HRESULT WINAPI capture_vibration(void* controller, const GameVibration* value) {
                     gamepad.Vibration({value->left, value->right,
                                        value->left_trigger, value->right_trigger});
                 } catch (...) {
-                    // WinRT was selected; an output failure does not change routes.
+                    // Reacquire next time, without switching this call to the original function.
+                    gamepad = nullptr;
                 }
                 return S_OK;
             }
