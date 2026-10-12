@@ -10,7 +10,7 @@ add_library(fh2_impulse_triggers MODULE
     src/main.cpp
 )
 
-target_compile_features(fh2_impulse_triggers PRIVATE cxx_std_17)
+target_compile_features(fh2_impulse_triggers PRIVATE cxx_std_20)
 target_include_directories(fh2_impulse_triggers PRIVATE include)
 target_compile_definitions(fh2_impulse_triggers PRIVATE
     NOMINMAX
