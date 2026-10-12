@@ -5,6 +5,7 @@
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Gaming.Input.h>
 
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 
@@ -13,6 +14,7 @@ namespace {
 using winrt::Windows::Gaming::Input::Gamepad;
 
 mod_log_fn g_log = nullptr;
+std::atomic<unsigned> g_device_changes{0};
 
 void log(const char* message) {
     if (g_log) {
@@ -71,7 +73,15 @@ HRESULT WINAPI capture_vibration(void* controller, const GameVibration* value) {
         }();
         if (SUCCEEDED(initialization)) {
             thread_local Gamepad gamepad{nullptr};
+            thread_local unsigned last_device_change = 0;
             try {
+                [[maybe_unused]] static const auto removed = Gamepad::GamepadRemoved(
+                    [](auto const&, auto const&) { ++g_device_changes; });
+                const unsigned device_changes = g_device_changes.load();
+                if (last_device_change != device_changes) {
+                    gamepad = nullptr;
+                    last_device_change = device_changes;
+                }
                 if (!gamepad) {
                     const auto gamepads = Gamepad::Gamepads();
                     if (gamepads.Size() > 0) {
