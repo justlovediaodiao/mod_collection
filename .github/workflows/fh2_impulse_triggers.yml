@@ -1,4 +1,4 @@
-name: Build fh2_impulse_triggers
+name: FH2 Impulse Triggers
 
 on:
   workflow_dispatch:

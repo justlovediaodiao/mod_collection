@@ -25,5 +25,3 @@ if(MSVC)
 endif()
 
 set_target_properties(fh2_impulse_triggers PROPERTIES PREFIX "")
-
-install(TARGETS fh2_impulse_triggers RUNTIME DESTINATION .)
