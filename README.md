@@ -8,6 +8,7 @@ A collection of game mods maintained in a single repository.
 | [`borderlands4_pack`](borderlands4_pack/) | Borderlands 4 | Loot-luck and combat-experience multiplier mods, with scripts for generating custom values. |
 | [`fh2_chs`](fh2_chs/) | Forza Horizon 2 | Simplified Chinese patch|
 | [`fh2_impulse_triggers`](fh2_impulse_triggers/) | Forza Horizon 2 | Add impulse triggers, for Azimuth. |
+| [`fh2_spire_chs`](fh2_spire_chs/) | Forza Horizon 2 Presents Fast & Furious | Simplified Chinese patch|
 | [`fh6-save-tools`](fh6-save-tools/) | Forza Horizon 6 | Collection Journal save tools for inspecting items, planning completion and point edits.|
 | [`gow-eday-roadie-camera-uncap`](gow-eday-roadie-camera-uncap/) | Gears of War: E-Day | Removes the horizontal camera speed cap when Roadie Run. |
 | [`halo_ce_fg`](halo_ce_fg/) | Halo: Campaign Evolved | An NVIDIA frame-generation mod implemented as a UE4SS Lua script. |
