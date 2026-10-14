@@ -29,11 +29,6 @@
 
 原始字典来源：<https://github.com/BYVoid/OpenCC/blob/master/data/dictionary/TSCharacters.txt>
 
-使用时冻结的源文件 SHA-256：
-
-```text
-9FF46A7D30E5765375EB13D33F2B03A34D298913CAF2B120380679F33AE1642D
-```
 
 映射必须保持一个 BMP 字符对应一个 BMP 字符。这样 UTF-16 代码单元数量不变，`.str` 中的偏移和长度可以原样保留。如果 DLC 出现代理对字符，或新映射会改变 UTF-16 长度，必须重建字符串池和全部偏移，不能套用当前的原位替换方法。
 
