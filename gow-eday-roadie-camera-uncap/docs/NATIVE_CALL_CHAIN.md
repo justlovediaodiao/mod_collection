@@ -31,7 +31,7 @@ module match for each signature.
 | `SetControlRotation` | `48 8B C4 48 89 58 08 57 48 81 EC F0 00 00 00 C5 F8 29 70 E8 C5 FB 10 72 10 C5 F8 29 78 D8 C5 FB 10 7A 08` | `+0` |
 | ordinary set return | `48 8B 06 48 8D 55 F7 48 8B CE FF 90 E8 07 00 00 48 8B CE E8 ?? ?? ?? ?? 48 85 C0` | `+16` |
 | Roadie set return | `48 8B 07 48 8D 54 24 20 C5 FB 11 54 24 28 48 8B CF C5 F8 77 FF 90 E8 07 00 00 C5 F8 28 74 24 60` | `+26` |
-| movement rotation push setup | `48 89 5C 24 08 57 48 83 EC 20 48 8B D9 E8 D2 63 35 FF 48 8B F8 48 85 C0 74 29 48 8B CB E8 ?? ?? ?? ?? 48 8B C8 48 8B D8 E8 ?? ?? ?? ?? 48 8D 8F 30 01 00 00 E8 ?? ?? ?? ?? 8A D0 48 8B CB E8 ?? ?? ?? ?? 48 8B 5C 24 30` | `+57` |
+| movement rotation push setup | `48 89 5C 24 08 57 48 83 EC 20 48 8B D9 E8 DA 4A 19 00 48 8B F8 48 85 C0 74 29 48 8B CB E8 ?? ?? ?? ?? 48 8B C8 48 8B D8 E8 ?? ?? ?? ?? 48 8D 8F 30 01 00 00 E8 ?? ?? ?? ?? 8A D0 48 8B CB E8 ?? ?? ?? ?? 48 8B 5C 24 30` | `+57` |
 
 `FNamePool` uses one independently verified signature:
 

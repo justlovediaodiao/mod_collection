@@ -42,7 +42,7 @@ local NAME_POOL_SIGNATURE =
   '0F B7 C0'
 
 local MOVEMENT_PUSH_SIGNATURE =
-  '48 89 5C 24 08 57 48 83 EC 20 48 8B D9 E8 D2 63 35 FF ' ..
+  '48 89 5C 24 08 57 48 83 EC 20 48 8B D9 E8 DA 4A 19 00 ' ..
   '48 8B F8 48 85 C0 74 29 ' ..
   '48 8B CB E8 ?? ?? ?? ?? 48 8B C8 48 8B D8 E8 ?? ?? ?? ?? ' ..
   '48 8D 8F 30 01 00 00 E8 ?? ?? ?? ?? 8A D0 48 8B CB ' ..
