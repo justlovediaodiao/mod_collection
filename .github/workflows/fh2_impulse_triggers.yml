@@ -1,0 +1,31 @@
+name: FH2 Impulse Triggers
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: fh2_impulse_triggers
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Configure
+        run: cmake -S . -B build -A x64
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Upload DLL
+        uses: actions/upload-artifact@v7
+        with:
+          name: fh2_impulse_triggers-windows-x64
+          path: fh2_impulse_triggers/build/Release/fh2_impulse_triggers.dll
+          if-no-files-found: error
