@@ -17,7 +17,12 @@ The script injects the patched Simplified Chinese font into the game process.
 It hooks `kernelbase!CreateFile2` and redirects Traditional Chinese font package
 reads to the translated font files.
 
-Requires Python 3 with `capstone`.
+Before running, copy `font_package_cht.bin` and `font_package_cht_4k.bin` into
+the fonts directory used by the script, creating it if it does not exist:
+
+```text
+%LOCALAPPDATA%\Packages\Microsoft.Halo5Forge_8wekyb3d8bbwe\LocalState\fonts
+```
 
 ```powershell
 python .\halo5_font_inject.py
