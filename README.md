@@ -13,7 +13,7 @@ A collection of game mods maintained in a single repository.
 | [`gow-eday-roadie-camera-uncap`](gow-eday-roadie-camera-uncap/) | Gears of War: E-Day | Removes the horizontal camera speed cap when Roadie Run. |
 | [`halo_ce_fg`](halo_ce_fg/) | Halo: Campaign Evolved | An NVIDIA frame-generation mod implemented as a UE4SS Lua script. |
 | [`halo5_chs`](halo5_chs/) | Halo 5: Guardians | Simplified Chinese patch |
-| [`mec-beatlink-auto`](mec-beatlink-auto/) | Mirror's Edge Catalyst | A mod_loader mod that automatically connects BeatLink on game startup and blocks game-window topmost requests. |
+| [`mec-beatlink-auto`](mec-beatlink-auto/) | Mirror's Edge Catalyst | Automatically connects BeatLink on game startup and blocks game-window topmost requests. |
 | [`mec_chs`](mec_chs/) | Mirror's Edge Catalyst | Simplified Chinese patch |
 | [`mhwilds_mod_pack`](mhwilds_mod_pack/) | Monster Hunter Wilds | Some lua script mdod based on reframework |
 | [`pragmata_dynamic_fps`](pragmata_dynamic_fps/) | PRAGMATA | Switch FPS in menus and during gameplay. |
